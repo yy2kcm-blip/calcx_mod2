@@ -365,7 +365,9 @@ export class Machine {
     if (!shift && !alpha && id === 'ENG' && entryMode === 'CMPLX') return tok('imag');
 
     if (inBase && HEX_KEYS[id] && !shift && !alpha) {
-      if (this.activeBase() !== 16) return null;
+      // A-F are available in every base, not just HEX.  On the real machine
+      // the letter keys still type a letter while BIN is selected; the value
+      // is only rejected when EXE tries to read it as a binary digit.
       return tok('hex' + HEX_KEYS[id]);
     }
     if (inBase && !shift) {
@@ -381,10 +383,15 @@ export class Machine {
     };
     if (!shift && digits[id]) {
       if (inBase) {
+        // The real fx-50FH II does not block a key that is invalid in the
+        // current base.  Typing "2" while BIN is selected is accepted, and
+        // only EXE reports the problem.  The digit therefore reaches the
+        // expression as an ordinary token and parseBaseDigits raises the
+        // Syntax error at evaluation time.
+        //
+        // A decimal point is the one exception: base-n values are whole
+        // numbers, so the key is simply not part of the base-n keyboard.
         if (id === 'DOT') return null;
-        const b = this.activeBase();
-        const d = '0123456789'.indexOf(digits[id]);
-        if (d < 0 || d >= b) return null;
       }
       return tok(digits[id]);
     }
@@ -798,6 +805,15 @@ export class Machine {
   menuKey(id, shift) {
     const m = this.menu;
     if (id === 'AC' || (shift && id === 'PROG')) {
+      this.closeMenu();
+      return;
+    }
+    // The MODE key steps through the pages of a menu and closes it once the
+    // last page is behind you.  The mode menu itself is laid out this way on
+    // the real fx-50FH II: page 1 carries COMP / CMPLX / BASE and page 2
+    // carries SD / REG / PRGM.
+    if (id === 'MODE' && !shift) {
+      if (m.page + 1 < m.pages.length) { m.page += 1; return; }
       this.closeMenu();
       return;
     }
@@ -1303,20 +1319,27 @@ export class Machine {
     if (f.stage === 'pick') {
       const d = { N0: '0', N1: '1', N2: '2', N3: '3', N4: '4', N5: '5', N6: '6', N7: '7', N8: '8', N9: '9' }[id];
       if (d) {
-        // Typing the two-digit number selects the formula; EXE then starts it.
-        // The catalogue stays on screen until then, so the chosen formula can
-        // be checked before its variables are entered.
+        // Typing the two-digit number selects the formula and starts it right
+        // away, which is what the real machine does: "Formula No.?" waits for
+        // two digits and then jumps straight into the formula's variables.
         f.digits += d;
         if (f.digits.length === 2) {
           const no = Number(f.digits);
           if (no < 1 || no > 23) { f.digits = ''; this.raise('Syntax'); return; }
           f.index = no - 1;
           f.digits = '';
+          this.formulaStart();
         }
         return;
       }
-      if (id === 'DOWN') { f.index = (f.index + 1) % FORMULAS.length; return; }
-      if (id === 'UP') { f.index = (f.index - 1 + FORMULAS.length) % FORMULAS.length; return; }
+      if (id === 'DOWN') {
+        f.index = f.browsing ? (f.index + 1) % FORMULAS.length : 0;
+        f.browsing = true; f.digits = ''; return;
+      }
+      if (id === 'UP') {
+        f.index = f.browsing ? (f.index - 1 + FORMULAS.length) % FORMULAS.length : FORMULAS.length - 1;
+        f.browsing = true; f.digits = ''; return;
+      }
       if (id === 'EXE') { this.formulaStart(); return; }
       return;
     }
@@ -1418,7 +1441,9 @@ export class Machine {
 
   openProgram() {
     if (this.mode === 'PRGM') { this.openProgramRoot(); return; }
-    this.prog = { stage: 'runpick' };
+    // Remember where the PROG key was pressed from so that pressing PROG a
+    // second time can put the calculator back where it was.
+    this.prog = { stage: 'runpick', returnScreen: this.screen };
     this.screen = 'prog';
   }
 
@@ -1432,6 +1457,27 @@ export class Machine {
       this.prog = null;
       this.clearEntry();
       if (this.mode === 'PRGM') this.openProgramRoot();
+      return;
+    }
+
+    // Pressing PROG again closes the program menu.  The real fx-50FH II
+    // treats the key as a toggle: one press brings the menu up, a second one
+    // puts the calculator back to the screen it came from.
+    //
+    // While a program is being edited PROG keeps its other job -- it opens
+    // the program-command menu -- so the toggle only applies to the menu
+    // screens.
+    if (id === 'PROG' && !shift && p.stage !== 'edit') {
+      if (this.mode === 'PRGM') {
+        // Inside the PRGM mode PROG reopens the mode's own initial screen,
+        // so there is no menu to toggle away from.
+        this.openProgramRoot();
+        return;
+      }
+      this.prog = null;
+      const back = p.returnScreen;
+      this.clearEntry();
+      if (back && back !== 'prog') this.screen = back;
       return;
     }
 
@@ -1762,7 +1808,17 @@ export class Machine {
     // Measured off the fx-50FH II: the mark stays lit for as long as BASE is
     // active (not just while a base key is being pressed), and HEX uses a
     // capital H while the other three are lower case.
-    if (this.mode === 'BASE') ind.add(BASE_ANNUNCIATOR[this.base]);
+    //
+    // Two screens deliberately leave the annunciator dark:
+    //   · the error screen -- a decimal 512 switched to BIN reports
+    //     "Math ERROR" with the "b" mark unlit.
+    //   · the menus -- pressing PROG brings up a full-screen program menu
+    //     that replaces the calculation display, and the base mark is not
+    //     shown while it is up.
+    const baseAnnunciatorScreen = this.screen === 'input' || this.screen === 'result';
+    if (this.mode === 'BASE' && baseAnnunciatorScreen) {
+      ind.add(BASE_ANNUNCIATOR[this.base]);
+    }
     if (this.mode === 'CMPLX' && this.result && !isReal(this.result.z)) {
       ind.add('R⇔I');
       // The imaginary part carries the i symbol; a polar angle carries the ∠
@@ -1909,9 +1965,13 @@ export class Machine {
     const f = this.formula;
     const spec = FORMULAS[f.index];
     if (f.stage === 'pick') {
+      // "Formula No.?" is what the machine shows while it waits for the
+      // two-digit formula number.  The title of the current formula only
+      // appears once the user browses the catalogue with the arrow keys.
+      // The digits being typed are echoed on the lower line between dashes.
       return {
-        line1: f.digits ? 'Formula No.?' : formulaTitle(spec),
-        line2: f.digits || '',
+        line1: f.browsing && !f.digits ? formulaTitle(spec) : 'Formula No.?',
+        line2: f.digits ? `-${f.digits}-` : '',
         indicators: new Set(),
         menuVerticalArrows: true
       };

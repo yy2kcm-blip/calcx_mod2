@@ -1066,8 +1066,10 @@ export class Machine {
       this.openMenu({
         page: 0,
         pages: [
-          { photoLayout: { upper: [2, 7, 12], lower: [1, 4, 7] },
-            items: [{ label: 'x̄', run: push('xbar') }, { label: 'σx', run: push('xsn') }, { label: 'sx', run: push('xsn1') }] },
+          // The machine prints the mean as x-bar and the two standard
+          // deviations with the sigma in front of the x: x-sigma-n for the
+          // population and x-sigma-n-1 for the sample.
+          { items: [{ label: 'x̄', run: push('xbar') }, { label: 'xσn', run: push('xsn') }, { label: 'xσn-1', run: push('xsn1') }] },
           { items: [{ label: 'minX', run: push('minX') }, { label: 'maxX', run: push('maxX') }] }
         ]
       });
@@ -1092,14 +1094,11 @@ export class Machine {
     this.openMenu({
       page,
       pages: [
-        { photoLayout: { upper: [1, 6, 12], lower: [0, 4, 8] },
-          items: [{ label: 'x̄', run: push('xbar') }, { label: 'σx', run: push('xsn') }, { label: 'sx', run: push('xsn1') }] },
-        { photoLayout: { upper: [1, 6, 12], lower: [0, 4, 8] },
-          items: [{ label: 'ȳ', run: push('ybar') }, { label: 'σy', run: push('ysn') }, { label: 'sy', run: push('ysn1') }] },
+        { items: [{ label: 'x̄', run: push('xbar') }, { label: 'xσn', run: push('xsn') }, { label: 'xσn-1', run: push('xsn1') }] },
+        { items: [{ label: 'ȳ', run: push('ybar') }, { label: 'yσn', run: push('ysn') }, { label: 'yσn-1', run: push('ysn1') }] },
         quad
           ? { items: [{ label: 'a', run: push('regA') }, { label: 'b', run: push('regB') }, { label: 'c', run: push('regC') }] }
-          : { photoLayout: { upper: [2, 7, 12], lower: [0, 4, 8] },
-              items: [{ label: 'a', run: push('regA') }, { label: 'b', run: push('regB') }, { label: 'r', run: push('regR') }] },
+          : { items: [{ label: 'a', run: push('regA') }, { label: 'b', run: push('regB') }, { label: 'r', run: push('regR') }] },
         quad
           ? { items: [{ label: 'x̂1', run: push('estX1') }, { label: 'x̂2', run: push('estX2') }, { label: 'ŷ', run: push('estY') }] }
           : { photoLayout: { upper: [4, 11], lower: [2, 7] },
@@ -1131,7 +1130,6 @@ export class Machine {
           ]
         },
         {
-          photoLayout: { upper: [0, 4, 9], lower: [0, 4, 8] },
           items: [
             { label: 'Inv', run: set('Inv') }, { label: 'Quad', run: set('Quad') },
             { label: 'AB-Exp', run: set('AB-Exp') }
@@ -1144,7 +1142,6 @@ export class Machine {
   openPCmd(page) {
     const push = (t) => (s) => s.insertToken(tok(t));
     this.openMenu({
-      photoPCmd: true,
       page,
       pages: [
         { items: [{ label: '?', run: push('pIn') }, { label: '→', run: push('pAsg') }, { label: ':', run: push(':') }, { label: '◢', run: push('pOut') }] },
@@ -1387,9 +1384,21 @@ export class Machine {
         return;
       }
       if (id === 'EXE') {
+        // EXE steps through the results a formula can show -- the quadratic
+        // offers x1 and x2, so one more EXE brings up the second root.  When
+        // there is nothing left to show, EXE re-runs the formula.
+        //
+        // A first-hand fx-50FH report: "FMLA 01 ... 之後有一個數字,就係答案
+        // 多按一次EXE 就有第二個答案".
         const spec = FORMULAS[f.index];
-        if (spec.extra && !f.showExtra) f.showExtra = true;
-        else this.formulaStart();
+        if (spec.extra && !f.showExtra) { f.showExtra = true; return; }
+        this.formulaStart();
+        return;
+      }
+      if (id === 'DOWN' || id === 'UP') {
+        // The arrow keys step through the results as well.
+        const spec = FORMULAS[f.index];
+        if (spec.extra) f.showExtra = !f.showExtra;
         return;
       }
     }
@@ -1872,10 +1881,15 @@ export class Machine {
       out.exp = l2 ? l2.exp : '';
       out.left = l2 ? l2.left : '';
     } else {
-      // BASE mode keeps the decimal point on the lower line even before the
-      // expression is submitted: the real fx-50FH II shows "0." while the user
-      // is still typing.  Other modes keep the bare "0".
-      out.line2 = this.screen === 'input' ? (this.mode === 'BASE' ? '0.' : '0') : '';
+      // The lower line is the answer display.  On the real fx-50FH II it
+      // shows "0." while nothing has been calculated yet -- both in COMP mode
+      // (measured on the guide's opening shot) and in BASE mode, where the
+      // converter keeps its own "0." readout even while digits are being
+      // typed (t=225 shows "1000" above and "0." below).
+      //
+      // The old bare "0" and the later blank line were both wrong: the machine
+      // always shows the decimal point.
+      out.line2 = this.screen === 'input' ? '0.' : '';
     }
     return Object.assign(base, out);
   }
@@ -1919,7 +1933,13 @@ export class Machine {
     }
 
     const items = page.items;
-    const slots = m.photoPCmd || page.photoLayout ? items.length : Math.max(1, ...m.pages.map((p) => p.items?.length || 0));
+    // Every page of a menu shares one set of number-key slots, so a short page
+    // keeps the anchors of the longest one instead of re-flowing them.  A
+    // photo layout still fixes the exact cell of each entry.
+    const familySlots = Math.max(1, ...m.pages.map((p) => p.items?.length || 0));
+    // The P-CMD menu was photographed page by page, and each page carries its
+    // own number-key positions, so it counts its own entries.
+    const slots = m.photoPCmd ? items.length : familySlots;
     const base = m.numbersFrom ? m.numbersFrom(m.page) : 1;
     const row1 = new Array(16).fill(' ');
     const row2 = new Array(10).fill(' ');

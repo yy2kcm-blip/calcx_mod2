@@ -1,6 +1,6 @@
 // sw.js — CalcX 离线版：预缓存全部静态资源，断网后照常使用。
 // 快取名由內容雜湊決定：內容一改，這個檔案的位元組就會變，瀏覽器會自動更新。
-const CACHE = 'calcx-offline-017af9d552';
+const CACHE = 'calcx-offline-51ec474262';
 const ASSETS = [
   "./",
   "./.nojekyll",

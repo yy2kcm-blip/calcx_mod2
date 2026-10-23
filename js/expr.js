@@ -106,13 +106,24 @@ export function baseMaxMagnitude(base) {
 
 // True when v can be shown in base n without overflowing the word.
 //
-// Measured on the fx-50FH II: a decimal 512 is perfectly legal, but pressing
-// the BIN key to re-render it reports "Math ERROR" -- the value no longer
-// fits the 10-bit word's positive half.  A value that is already negative
-// still fits, because the machine shows it as its two's complement.
+// The word is signed, so the range runs from -(2^(bits-1)) to 2^(bits-1)-1
+// rather than being symmetric.  The CASIO manual for the fx-100MS / 570MS /
+// 991MS lists the very same bounds:
+//
+//   Binary     0 .. 0111111111  and  1000000000 .. 1111111111
+//   Octal      0 .. 3777777777  and  4000000000 .. 7777777777
+//   Decimal    -2147483648 .. 2147483647
+//   Hexadecimal 0 .. 7FFFFFFF    and  80000000 .. FFFFFFFF
+//
+// Two consequences the old absolute-value test got wrong:
+//   · 80000000 in HEX is the negative end of the 32-bit word, so switching it
+//     to DEC has to yield -2147483648 rather than "Math ERROR".
+//   · 512 in DEC is outside the 10-bit BIN word, so re-rendering it in BIN
+//     does report "Math ERROR" -- measured on the fx-50FH II.
 export function fitsBase(v, base) {
   if (!Number.isInteger(v)) return false;
-  return Math.abs(v) <= baseMaxMagnitude(base);
+  const bits = WORD_BITS[base] || 32;
+  return v >= -(2 ** (bits - 1)) && v <= 2 ** (bits - 1) - 1;
 }
 
 // ---------------------------------------------------------------------------

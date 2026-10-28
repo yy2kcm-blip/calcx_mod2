@@ -760,10 +760,18 @@ export class Machine {
   }
 
   toggleReIm() {
-    // Re⇔Im only has meaning while a complex result is displayed. On a real
-    // result the toggle is ignored, so it can never turn that result into "0".
+    // Re⇔Im swaps the displayed part of a complex result.
+    //
+    // The real machine lets the key be pressed even when the result is a plain
+    // real number: the imaginary part is then shown as 0.i, and the R⇔Im mark
+    // lights up while the imaginary part is on screen.  Pressing it again
+    // returns to the real part and the mark goes dark again.
+    //
+    // The one case that stays dark is a collapsed polar angle (5∠180), where
+    // there is no imaginary part to show at all.
     if (this.screen !== 'result' || !this.result) return;
-    if (isReal(this.result.z)) return;
+    const z = this.result.z;
+    if (this.isPolarResult(this.result) && z.im === 0) return;
     this.result.part = this.result.part ? 0 : 1;
   }
 
@@ -1828,11 +1836,18 @@ export class Machine {
     if (this.mode === 'BASE' && baseAnnunciatorScreen) {
       ind.add(BASE_ANNUNCIATOR[this.base]);
     }
-    if (this.mode === 'CMPLX' && this.result && !isReal(this.result.z)) {
-      ind.add('R⇔I');
+    if (this.mode === 'CMPLX' && this.result) {
+      const z = this.result.z;
+      const polar = this.isPolarResult(this.result);
+      // A collapsed polar angle (5∠180) has no imaginary part to show, so the
+      // R⇔Im mark stays dark.  Otherwise the mark lights whenever there is
+      // something to switch to: a genuinely complex result, or the imaginary
+      // part of a real result, which the real machine shows as 0.i.
+      const collapsed = polar && z.im === 0;
+      if (!collapsed && (!isReal(z) || this.result.part === 1)) ind.add('R⇔I');
       // The imaginary part carries the i symbol; a polar angle carries the ∠
       // symbol, so a collapsed angle drops the R⇔I mark with it.
-      if (this.result.part === 1) ind.add(this.isPolarResult(this.result) ? '∠' : 'i');
+      if (this.result.part === 1 && !collapsed) ind.add(polar ? '∠' : 'i');
     }
 
     const lowInputMemory = this.screen === 'input' && INPUT_BYTES - inputBytesOf(this.tokens) <= 8;
@@ -2088,8 +2103,11 @@ export class Machine {
       if (st.kind === 'output') {
         indicators.delete('R⇔I');
         indicators.delete('i');
-        if (this.mode === 'CMPLX' && (!isReal(st.value) || this.isPolarResult(st.presentation))) indicators.add('R⇔I');
-        if (this.mode === 'CMPLX' && st.part) indicators.add('i');
+        const polarOut = this.isPolarResult(st.presentation);
+        const collapsedOut = polarOut && st.value.im === 0;
+        if (this.mode === 'CMPLX' && !collapsedOut &&
+            (!isReal(st.value) || st.part === 1)) indicators.add('R⇔I');
+        if (this.mode === 'CMPLX' && st.part && !collapsedOut) indicators.add(polarOut ? '∠' : 'i');
         const l2 = this.line2For({ ...st.presentation, z: st.value, part: st.part || 0 });
         return { line1: st.text || '', line2: l2.main, exp: l2.exp, pause: true, indicators };
       }

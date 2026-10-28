@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CalcX 離線版 · 按鍵速查表</title>
+<style>
+  :root { color-scheme: light; --ink:#203348; --muted:#63768b; --line:#dce5ee;
+          --accent:#246ddd; --accent-soft:#e8f1fd; --ok:#1f7a4d; --bad:#b03030; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:14px 14px 60px; font:15px/1.7 system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+         color:var(--ink); background:#f4f8fc; }
+  h1 { font-size:19px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  a { color:var(--accent); }
+
+  .layout { display:grid; grid-template-columns: minmax(0,1fr) 400px; gap:18px; align-items:start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ---- 左欄：條目 ---- */
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .controls input[type=search] { flex:1 1 200px; padding:8px 11px; border:1px solid var(--line); border-radius:9px; font:inherit; font-size:14px; }
+  .controls select { padding:8px 10px; border:1px solid var(--line); border-radius:9px; font:inherit; font-size:14px; background:white; }
+
+  .group { margin:16px 0 6px; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#7b90a8; }
+  .entry { display:block; width:100%; text-align:left; background:white; border:1px solid var(--line);
+           border-radius:11px; padding:9px 12px; margin:0 0 6px; cursor:pointer; font:inherit; }
+  .entry:hover { border-color:var(--accent); }
+  .entry[aria-current=true] { border-color:var(--accent); background:var(--accent-soft); }
+  .entry .t { font-size:14px; font-weight:600; }
+  .entry .k { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:#3d5673; margin-top:3px;
+              word-break:break-word; }
+  .entry .r { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ok); margin-top:2px; }
+  .entry.err .r { color:var(--bad); }
+  .entry .d { font-size:12.5px; color:var(--muted); margin-top:4px; }
+
+  /* ---- 右欄：面盤 ---- */
+  .panel { position:sticky; top:12px; background:white; border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .panel h2 { font-size:13px; margin:0 0 8px; text-transform:uppercase; letter-spacing:1.2px; color:#7b90a8; }
+  .plate { position:relative; width:100%; max-width:360px; margin:0 auto; }
+  .plate img { display:block; width:100%; height:auto; }
+  .plate .hl { position:absolute; border:2.5px solid #ff8a1f; border-radius:7px; background:rgba(255,138,31,.28);
+                pointer-events:none; opacity:0; transition:opacity .12s; }
+  .plate .hl.on { opacity:1; }
+  .plate .lcdwrap { position:absolute; }
+  .plate canvas { display:block; width:100%; height:100%; }
+
+  .try { margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .try button { padding:8px 14px; border:0; border-radius:9px; background:var(--accent); color:white;
+                font:inherit; font-weight:600; cursor:pointer; }
+  .try button.ghost { background:#eef3f8; color:var(--ink); }
+  .try output { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
+
+  .detail { background:white; border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:10px 0 0; }
+  .detail h3 { margin:0 0 6px; font-size:15px; }
+  .detail .seq { font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .detail .out { margin-top:6px; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:8px; }
+  .count { color:var(--muted); font-size:12.5px; margin:6px 0 0; }
+</style>
+</head>
+<body>
+<h1>CalcX 離線版 · 按鍵速查表</h1>
+<p class="sub">每一條都是「按哪些鍵 → 應該顯示什麼」。點一條，右邊的真機面盤會亮起對應的鍵；再按「試這一下」，可以直接在下面跑一次。</p>
+
+<div class="layout">
+  <section>
+    <div class="controls">
+      <input type="search" id="q" placeholder="搜尋：sin、base mode、511、Math ERROR…（也可搜結果的十/二/八/十六進位寫法）" autocomplete="off">
+      <select id="cat"><option value="">全部分類</option></select>
+    </div>
+    <p class="count" id="count"></p>
+    <div id="list"></div>
+  </section>
+
+  <aside class="panel">
+    <h2>真機面盤</h2>
+    <div class="plate" id="plate">
+      <img src="./assets/fx-50fh-ii-generated-transparent.png" alt="fx-50FH II 面盤" id="face">
+      <canvas id="lcd"></canvas>
+    </div>
+    <div class="try">
+      <button id="run">▶ 試這一下</button>
+      <button class="ghost" id="reset">清除</button>
+      <output id="out"></output>
+    </div>
+    <div class="detail" id="detail">
+      <h3>點一條左邊的項目</h3>
+      <div class="hint">這裡會顯示那條項目的按鍵序列和應該得到的結果。</div>
+    </div>
+    <p class="hint">
+      速查表的每一條都對應一條通過的自動測試，所以「試這一下」一定跑得出同樣的結果。
+      速度可以自己改，試多幾次就熟了。
+    </p>
+  </aside>
+</div>
+
+<script type="module">
+import { KEYS, SHELL_W, SHELL_H } from './js/keymap.js';
+import { LCD, GLASS } from './js/lcd.js';
+import { Machine } from './js/machine.js';
+import { REFERENCE } from './js/reference-data.js';
+
+const $ = (s) => document.querySelector(s);
+const plate = $('#plate');
+const face = $('#face');
+
+// ---- 面盤：底圖 + 高亮框 + LCD -------------------------------------------
+const keyMap = new Map(KEYS.map((k) => [k.id, k]));
+const highlights = new Map();
+for (const k of KEYS) {
+  const d = document.createElement('div');
+  d.className = 'hl';
+  d.style.left = (k.x / SHELL_W * 100) + '%';
+  d.style.top = (k.y / SHELL_H * 100) + '%';
+  d.style.width = (k.w / SHELL_W * 100) + '%';
+  d.style.height = (k.h / SHELL_H * 100) + '%';
+  plate.append(d);
+  highlights.set(k.id, d);
+}
+
+// LCD 畫布對齊到面盤上的玻璃位置。
+// 尺寸與縮放由 LCD 類自己管理（它用 clientWidth 算 scale），所以這裡
+// 不要再手動設 canvas.width —— 那會跟 resize() 打架，而且 constructor
+// 執行時 canvas 還沒進 DOM，clientWidth 是 0。
+const canvas = $('#lcd');
+const lcdWrap = document.createElement('div');
+lcdWrap.className = 'lcdwrap';
+lcdWrap.style.left = (GLASS.x / SHELL_W * 100) + '%';
+lcdWrap.style.top = (GLASS.y / SHELL_H * 100) + '%';
+lcdWrap.style.width = (GLASS.w / SHELL_W * 100) + '%';
+lcdWrap.style.height = (GLASS.h / SHELL_H * 100) + '%';
+plate.append(lcdWrap);
+lcdWrap.append(canvas);
+
+const lcd = new LCD(canvas);
+// 進 DOM 之後尺寸才對，再調一次 resize
+requestAnimationFrame(() => { lcd.resize(); renderMachine(); });
+
+// ---- 沙盤：自己的 Machine 實例 -------------------------------------------
+const machine = new Machine();
+const LIT = {
+  '0':'N0','1':'N1','2':'N2','3':'N3','4':'N4','5':'N5','6':'N6','7':'N7','8':'N8','9':'N9',
+  '.':'DOT','+':'ADD','-':'SUB','*':'MUL','/':'DIV','(':'LPAR',')':'RPAR',',':'COMMA','=':'EXE'
+};
+function pressSeq(seq, prep) {
+  if (prep) {
+    // prep 是形如 "m.setup.frac = 'd/c';" 的片段，在按鍵之前套用
+    try { new Function('m', prep)(machine); } catch { /* 忽略 */ }
+  }
+  let i = 0;
+  while (i < seq.length) {
+    const ch = seq[i];
+    if (ch === ' ') { i++; continue; }
+    if (ch === '@') { machine.press('SHIFT'); i++; continue; }
+    if (ch === '#') { machine.press('ALPHA'); i++; continue; }
+    if (ch === '[') { const j = seq.indexOf(']', i); machine.press(seq.slice(i + 1, j)); i = j + 1; continue; }
+    if (LIT[ch]) { machine.press(LIT[ch]); i++; continue; }
+    break;
+  }
+}
+function renderMachine() { lcd.render(machine.view()); }
+
+// ---- 清掉高亮 ------------------------------------------------------------
+function clearHighlight() {
+  for (const d of highlights.values()) d.classList.remove('on');
+}
+function highlightKeys(keys) {
+  clearHighlight();
+  for (const k of keys) {
+    const d = highlights.get(k.id);
+    if (d) d.classList.add('on');
+  }
+}
+
+// ---- 列表 ----------------------------------------------------------------
+const catNames = REFERENCE.categories;
+const sel = $('#cat');
+for (const [id, name] of Object.entries(catNames)) {
+  const n = REFERENCE.entries.filter((e) => e.cat === id).length;
+  if (!n) continue;
+  const o = document.createElement('option');
+  o.value = id; o.textContent = `${name}（${n}）`;
+  sel.append(o);
+}
+
+let current = null;
+
+function makeEntry(e) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'entry' + (e.isError ? ' err' : '');
+  const title = document.createElement('div');
+  title.className = 't';
+  title.textContent = e.title;
+  b.append(title);
+
+  if (e.text) {
+    const k = document.createElement('div');
+    k.className = 'k';
+    k.textContent = e.text;
+    b.append(k);
+  }
+  if (e.shown) {
+    const r = document.createElement('div');
+    r.className = 'r';
+    r.textContent = '→ ' + e.shown;
+    b.append(r);
+  }
+  if (e.titleEn && e.titleEn !== e.title) {
+    const en = document.createElement('div');
+    en.className = 'd';
+    en.textContent = e.titleEn;
+    b.append(en);
+  }
+  if (e.note) {
+    const d = document.createElement('div');
+    d.className = 'd';
+    d.textContent = e.note;
+    b.append(d);
+  }
+  b.addEventListener('click', () => select(e, b));
+  return b;
+}
+
+function select(e, btn) {
+  current = e;
+  for (const el of document.querySelectorAll('.entry')) el.removeAttribute('aria-current');
+  if (btn) btn.setAttribute('aria-current', 'true');
+  highlightKeys(e.keys || []);
+
+  const det = $('#detail');
+  det.innerHTML = '';
+  const h = document.createElement('h3');
+  h.textContent = e.title;
+  det.append(h);
+  if (e.text) {
+    const s = document.createElement('div');
+    s.className = 'seq';
+    s.textContent = e.text;
+    det.append(s);
+  }
+  if (e.shown) {
+    const o = document.createElement('div');
+    o.className = 'out';
+    o.textContent = '應該顯示：' + e.shown;
+    det.append(o);
+  }
+  if (e.note) {
+    const n = document.createElement('div');
+    n.className = 'hint';
+    n.textContent = e.note;
+    det.append(n);
+  }
+  if (e.url) {
+    const u = document.createElement('div');
+    u.className = 'hint';
+    const a = document.createElement('a');
+    a.href = e.url; a.target = '_blank'; a.rel = 'noreferrer';
+    a.textContent = '參考來源 ↗';
+    u.append(a);
+    det.append(u);
+  }
+  det.scrollIntoView({ block: 'nearest' });
+}
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  const c = sel.value;
+  const list = $('#list');
+  list.innerHTML = '';
+  let shown = 0;
+  const groups = new Map();
+  for (const e of REFERENCE.entries) {
+    if (c && e.cat !== c) continue;
+    const hay = (e.title + ' ' + e.text + ' ' + e.want + ' ' + (e.shown || '') + ' ' + (e.note || '') + ' ' + e.cat + ' ' + (e.aliases || []).join(' ')).toLowerCase();
+    if (q && !hay.includes(q)) continue;
+    shown++;
+    if (!groups.has(e.cat)) groups.set(e.cat, []);
+    groups.get(e.cat).push(e);
+  }
+  for (const [cat, items] of groups) {
+    const h = document.createElement('div');
+    h.className = 'group';
+    h.textContent = catNames[cat] || cat;
+    list.append(h);
+    for (const e of items) list.append(makeEntry(e));
+  }
+  $('#count').textContent = shown === REFERENCE.entries.length
+    ? `共 ${shown} 條`
+    : `顯示 ${shown} / ${REFERENCE.entries.length} 條`;
+}
+
+$('#q').addEventListener('input', renderList);
+sel.addEventListener('change', renderList);
+
+// ---- 試這一下 ------------------------------------------------------------
+$('#run').addEventListener('click', () => {
+  if (!current || !current.seq) return;
+  machine.press('ON');
+  pressSeq(current.seq, current.prep);
+  renderMachine();
+  const v = machine.view();
+  $('#out').textContent = `${v.line1 || ''}  ${v.line2 || ''}`.trim();
+});
+$('#reset').addEventListener('click', () => {
+  machine.press('ON');
+  renderMachine();
+  $('#out').textContent = '';
+});
+
+renderList();
+renderMachine();
+
+// 面盤圖載入後 .plate 才有高度，百分比定位才準；此時重算 LCD 尺寸
+if (face.complete) { lcd.resize(); renderMachine(); }
+else { face.addEventListener('load', () => { lcd.resize(); renderMachine(); }); }
+window.addEventListener('resize', () => { lcd.resize(); renderMachine(); });
+</script>
+</body>
+</html>
